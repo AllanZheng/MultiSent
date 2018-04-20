@@ -2,6 +2,8 @@
 import numpy as np
 import word2vec
 import torch
+import torchvision
+import torchvison.transforms as transforms
 class Net(nn.Modules):
     def __init__(self):
         super(Net,self).__init__()
@@ -14,9 +16,9 @@ class Net(nn.Modules):
     def forward:
         if(i==0):
             while(i<0):
+               if(x>0)
 
 
-    def backward:
 
 
 def w2c():
@@ -27,7 +29,7 @@ def w2c():
     # now, we want to iterate over our vocabulary items
     for word, emb_index in vectorizer.word_vocab.items():
     # if the word is in the loaded glove vectors
-    if word.lower() in word_to_index:
+        if word.lower() in word_to_index:
          # get the index into the glove vectors
          glove_index = word_to_index[word.lower()]
          # get the glove vector itself and convert to pytorch structure
