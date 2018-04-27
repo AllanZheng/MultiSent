@@ -1,7 +1,8 @@
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
-
+import params
+import Pre_process
 class RNN(nn.Module):
 #这里自己实现一个RNN.
    #input_size就是char_vacab_size=26,hidden_size随意，就是隐层神经元数，output_size要分成categories类
@@ -55,13 +56,92 @@ def evaluate(line_tensor):
 
 
 def  Train_process():
-    return 0
+    print("loading word2vec...")
+    word_vectors = pre_vector()
+
+    wv_matrix = []
+    for i in range(len(data["vocab"])):
+        word = data["idx_to_word"][i]
+        if word in word_vectors.vocab:
+            wv_matrix.append(word_vectors.word_vec(word))
+        else:
+            wv_matrix.append(np.random.uniform(-0.01, 0.01, 300).astype("float32"))
+
+        # one for UNK and one for zero padding
+    wv_matrix.append(np.random.uniform(-0.01, 0.01, 300).astype("float32"))
+    wv_matrix.append(np.zeros(300).astype("float32"))
+    wv_matrix = np.array(wv_matrix)
+    params["WV_MATRIX"] = wv_matrix
+
+    model = CNN(**params).cuda(params["GPU"])
+
+    parameters = filter(lambda p: p.requires_grad, model.parameters())
+    optimizer = optim.Adadelta(parameters, params["LEARNING_RATE"])
+    criterion = nn.CrossEntropyLoss()
+
+    pre_dev_acc = 0
+    max_dev_acc = 0
+    max_test_acc = 0
+    '''
+    GPU 并行
+    '''
+    for e in range(params["EPOCH"]):
+        data["train_x"], data["train_y"] = shuffle(data["train_x"], data["train_y"])
+
+        for i in range(0, len(data["train_x"]), params["BATCH_SIZE"]):
+            batch_range = min(params["BATCH_SIZE"], len(data["train_x"]) - i)
+
+            batch_x = [[data["word_to_idx"][w] for w in sent] +
+                       [params["VOCAB_SIZE"] + 1] * (params["MAX_SENT_LEN"] - len(sent))
+                       for sent in data["train_x"][i:i + batch_range]]
+            batch_y = [data["classes"].index(c) for c in data["train_y"][i:i + batch_range]]
+
+            batch_x = Variable(torch.LongTensor(batch_x)).cuda(params["GPU"])
+            batch_y = Variable(torch.LongTensor(batch_y)).cuda(params["GPU"])
+
+            optimizer.zero_grad()
+            model.train()
+            pred = model(batch_x)
+            loss = criterion(pred, batch_y)
+            loss.backward()
+            nn.utils.clip_grad_norm(parameters, max_norm=params["NORM_LIMIT"])
+            optimizer.step()
+
+        dev_acc = test(data, model, params, mode="dev")
+        test_acc = test(data, model, params)
+        print("epoch:", e + 1, "/ dev_acc:", dev_acc, "/ test_acc:", test_acc)
+
+        if params["EARLY_STOPPING"] and dev_acc <= pre_dev_acc:
+            print("early stopping by dev_acc!")
+            break
+        else:
+            pre_dev_acc = dev_acc
+
+        if dev_acc > max_dev_acc:
+            max_dev_acc = dev_acc
+            max_test_acc = test_acc
+            best_model = copy.deepcopy(model)
+    print("max dev acc:", max_dev_acc, "test acc:", max_test_acc)
+    return best_model
 
 
-def get_accuracy(truth, pred):
-    assert len(truth) == len(pred)
-    right = 0
-    for i in range(len(truth)):
-        if truth[i] == pred[i]:
-            right += 1.0
+def test(data, model, params, mode="test"):
+    model.eval()
+
+    if mode == "dev":
+        x, y = data["dev_x"], data["dev_y"]
+    elif mode == "test":
+        x, y = data["test_x"], data["test_y"]
+
+    x = [[data["word_to_idx"][w] if w in data["vocab"] else params["VOCAB_SIZE"] for w in sent] +
+         [params["VOCAB_SIZE"] + 1] * (params["MAX_SENT_LEN"] - len(sent))
+         for sent in x]
+
+    x = Variable(torch.LongTensor(x)).cuda(params["GPU"])
+    y = [data["classes"].index(c) for c in y]
+
+    pred = np.argmax(model(x).cpu().data.numpy(), axis=1)
+    acc = sum([1 if p == y else 0 for p, y in zip(pred, y)]) / len(pred)
+
+    return acc
     return right / len(truth)

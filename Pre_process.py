@@ -25,7 +25,7 @@ print(x[vocab["تصنيف"]])
 
 def pre_Process(content):
     content=content.lower()
-    content = re.sub(r"http\S+", "", content, flags=re.I)
+   v
     label=content.split(" ")[0]
     content=content.split(" ")
     return label,content
